@@ -1,5 +1,6 @@
-flask>=2.3.0
-mutagen>=1.46.0
-requests>=2.31.0
-pyside6>=6.5.0
-pyinstaller>=5.13.0
+flask==2.3.3
+flask-cors==4.0.0
+mutagen==1.47.0
+requests==2.31.0
+PySide6==6.6.0
+pyinstaller==5.13.0
