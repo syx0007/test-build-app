@@ -113,7 +113,7 @@ jobs:
         if (Test-Path "dist/$buildName.exe") {
           echo "✅ 构建成功！"
           # 重命名以包含架构信息
-          $newName = "MusicMetadataProcessor_${{ matrix.artifact_suffix }}.exe"
+          $newName = "Metadata Processing Server_${{ matrix.artifact_suffix }}.exe"
           Move-Item "dist/$buildName.exe" "dist/$newName"
           echo "重命名为: $newName"
         } else {
