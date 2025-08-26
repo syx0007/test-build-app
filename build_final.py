@@ -3,8 +3,16 @@ import sys
 import os
 import tempfile
 import traceback
+import platform
 
 def build_final():
+    print("=" * 60)
+    print("开始构建 MusicMetadataProcessor")
+    print(f"Python版本: {sys.version}")
+    print(f"系统架构: {platform.architecture()[0]}")
+    print(f"工作目录: {os.getcwd()}")
+    print("=" * 60)
+    
     # 检查图标文件是否存在（支持多种路径）
     icon_paths = [
         "D:/moe-n/Desktop/app/icon.ico",
@@ -17,21 +25,15 @@ def build_final():
     for path in icon_paths:
         if os.path.exists(path):
             icon_path = path
+            print(f"✅ 找到图标文件: {icon_path}")
             break
     
     if not icon_path:
-        print("警告: 未找到图标文件，将使用默认图标")
-        # 在 GitHub Actions 中继续构建，只是没有图标
+        print("⚠️  警告: 未找到图标文件，将使用默认图标")
         icon_option = []
     else:
-        print(f"使用图标: {icon_path}")
+        print(f"✅ 使用图标: {icon_path}")
         icon_option = [f"--icon={icon_path}"]
-    
-    # 添加数据文件选项
-    add_data_options = []
-    if icon_path and icon_path != "D:/moe-n/Desktop/app/icon.ico":
-        # 只有在图标文件在项目目录中时才添加
-        add_data_options = ["--add-data", f"{icon_path};."]
     
     # 构建命令
     cmd = [
@@ -45,91 +47,15 @@ def build_final():
         # 添加图标参数（如果有）
         *icon_option,
         
-        # 添加数据文件（如果有）
-        *add_data_options,
-        
         # 必需的隐藏导入
         "--hidden-import=flask",
         "--hidden-import=flask_cors",
         "--hidden-import=mutagen",
-        "--hidden-import=mutagen.id3",
-        "--hidden-import=mutagen.mp3",
-        "--hidden-import=mutagen.flac",
-        "--hidden-import=mutagen.oggvorbis",
-        "--hidden-import=mutagen.mp4",
-        "--hidden-import=mutagen.wave",
-        "--hidden-import=mutagen.aiff",
         "--hidden-import=requests",
-        "--hidden-import=requests.adapters",
-        "--hidden-import=urllib3",
-        "--hidden-import=urllib3.util",
-        "--hidden-import=urllib3.util.retry",
-        "--hidden-import=urllib3.util.connection",
-        "--hidden-import=urllib3.contrib",
-        "--hidden-import=urllib3.contrib.pyopenssl",
         "--hidden-import=PySide6",
         "--hidden-import=PySide6.QtWidgets",
         "--hidden-import=PySide6.QtCore",
         "--hidden-import=PySide6.QtGui",
-        "--hidden-import=http.client",
-        "--hidden-import=charset_normalizer",
-        "--hidden-import=idna",
-        "--hidden-import=email",
-        "--hidden-import=email.mime",
-        "--hidden-import=email.mime.text",
-        "--hidden-import=email.mime.multipart",
-        "--hidden-import=OpenSSL",
-        "--hidden-import=OpenSSL.SSL",
-        "--hidden-import=OpenSSL.crypto",
-        "--hidden-import=cryptography",
-        "--hidden-import=cryptography.hazmat",
-        "--hidden-import=cryptography.hazmat.backends",
-        "--hidden-import=cryptography.hazmat.primitives",
-        "--hidden-import=cryptography.hazmat.primitives.asymmetric",
-        "--hidden-import=cryptography.x509",
-        "--hidden-import=werkzeug",
-        "--hidden-import=werkzeug.serving",
-        "--hidden-import=asgiref.sync",
-        "--hidden-import=dotenv",
-        "--hidden-import=base64",
-        "--hidden-import=uuid",
-        "--hidden-import=json",
-        "--hidden-import=re",
-        "--hidden-import=threading",
-        "--hidden-import=time",
-        "--hidden-import=logging",
-        "--hidden-import=mimetypes",
-        "--hidden-import=traceback",
-        "--hidden-import=shutil",
-        "--hidden-import=signal",
-        "--hidden-import=atexit",
-        "--hidden-import=concurrent",
-        "--hidden-import=concurrent.futures",
-        "--hidden-import=urllib.parse",
-        "--hidden-import=tempfile",
-        
-        # 排除不必要的模块
-        "--exclude-module=tkinter",
-        "--exclude-module=test",
-        "--exclude-module=unittest",
-        "--exclude-module=_curses",
-        "--exclude-module=watchdog",
-        "--exclude-module=socks",
-        "--exclude-module=h2",
-        "--exclude-module=brotli",
-        "--exclude-module=brotlicffi",
-        "--exclude-module=zstandard",
-        "--exclude-module=js",
-        "--exclude-module=pyodide",
-        "--exclude-module=simplejson",
-        "--exclude-module=pydoc",
-        "--exclude-module=doctest",
-        "--exclude-module=pdb",
-        "--exclude-module=multiprocessing",
-        
-        # 添加额外的二进制文件
-        "--collect-binaries=mutagen",
-        "--collect-binaries=cryptography",
         
         "app_gui.py"
     ]
@@ -138,6 +64,17 @@ def build_final():
     print("命令:", " ".join(cmd))
     
     try:
+        # 显示当前目录结构
+        print("\n当前目录结构:")
+        for root, dirs, files in os.walk('.'):
+            level = root.replace('.', '').count(os.sep)
+            indent = ' ' * 2 * level
+            print(f'{indent}{os.path.basename(root)}/')
+            subindent = ' ' * 2 * (level + 1)
+            for file in files:
+                if file.endswith(('.py', '.ico', '.txt')):
+                    print(f'{subindent}{file}')
+        
         result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
         
         print("\n构建完成!")
@@ -145,11 +82,11 @@ def build_final():
         
         if result.stdout:
             print("\n标准输出:")
-            print(result.stdout)
+            print(result.stdout[-1000:])  # 只显示最后1000字符避免日志过长
         
         if result.stderr:
             print("\n标准错误:")
-            print(result.stderr)
+            print(result.stderr[-1000:])  # 只显示最后1000字符
         
         # 检查构建是否成功
         if result.returncode == 0:
@@ -158,8 +95,23 @@ def build_final():
                 file_size = os.path.getsize(dist_path) / (1024*1024)
                 print(f"\n✅ 构建成功！可执行文件位置: {dist_path}")
                 print(f"文件大小: {file_size:.2f} MB")
+                
+                # 显示构建产物信息
+                print("\n构建产物信息:")
+                for root, dirs, files in os.walk('dist'):
+                    for file in files:
+                        if file.endswith('.exe'):
+                            full_path = os.path.join(root, file)
+                            size = os.path.getsize(full_path) / (1024*1024)
+                            print(f"  {file}: {size:.2f} MB")
             else:
                 print("\n❌ 构建完成但未找到可执行文件")
+                # 检查整个目录结构
+                print("当前目录的所有文件:")
+                for root, dirs, files in os.walk('.'):
+                    for file in files:
+                        if file.endswith('.exe'):
+                            print(f"找到EXE文件: {os.path.join(root, file)}")
                 return 1
         else:
             print("\n❌ 构建失败！")
