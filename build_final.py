@@ -1,173 +1,192 @@
-name: Build Windows Executables
+import subprocess
+import sys
+import os
+import tempfile
 
-on:
-  push:
-    tags:
-      - 'v*'  # 版本标签触发，如 v1.0.0, v2.1.0
-  pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:  # 允许手动触发
+def build_final():
+    # 检查图标文件是否存在
+    icon_paths = [
+        "icon.ico",
+        "./icon.ico",
+        "../icon.ico",
+        "resources/icon.ico",
+        "assets/icon.ico"
+    ]
+    
+    icon_path = None
+    for path in icon_paths:
+        if os.path.exists(path):
+            icon_path = path
+            break
+    
+    if icon_path is None:
+        print("警告: 未找到图标文件，将继续不使用图标")
+        icon_option = []
+    else:
+        print(f"使用图标: {icon_path}")
+        icon_option = [f"--icon={icon_path}"]
+    
+    # 创建临时目录并复制图标文件
+    temp_dir = tempfile.mkdtemp()
+    temp_icon_path = os.path.join(temp_dir, "icon.ico")
+    
+    try:
+        # 使用文件读取和写入的方式复制图标，避免文件占用问题
+        with open(icon_path, 'rb') as src:
+            with open(temp_icon_path, 'wb') as dst:
+                dst.write(src.read())
+        
+        icon_option = [f"--icon={temp_icon_path}"]
+        print(f"使用图标: {icon_path}")
+        
+        # 添加数据文件选项，将图标文件打包到exe中
+        add_data_option = ["--add-data", f"{temp_icon_path};."]
+        
+        cmd = [
+            sys.executable, "-m", "PyInstaller",
+            "--onefile",
+            "--windowed",
+            "--name=MusicMetadataProcessor",
+            "--clean",
+            "--noconfirm",
+            
+            # 添加图标参数
+            *icon_option,
+            
+            # 添加数据文件
+            *add_data_option,
+            
+            # 必需的隐藏导入 - 更新了所有必要的库
+            "--hidden-import=flask",
+            "--hidden-import=flask_cors",
+            "--hidden-import=mutagen",
+            "--hidden-import=mutagen.id3",
+            "--hidden-import=mutagen.mp3",
+            "--hidden-import=mutagen.flac",
+            "--hidden-import=mutagen.oggvorbis",
+            "--hidden-import=mutagen.mp4",
+            "--hidden-import=mutagen.wave",
+            "--hidden-import=mutagen.aiff",
+            "--hidden-import=requests",
+            "--hidden-import=requests.adapters",
+            "--hidden-import=urllib3",
+            "--hidden-import=urllib3.util",
+            "--hidden-import=urllib3.util.retry",
+            "--hidden-import=urllib3.util.connection",
+            "--hidden-import=urllib3.contrib",
+            "--hidden-import=urllib3.contrib.pyopenssl",
+            "--hidden-import=PySide6",
+            "--hidden-import=PySide6.QtWidgets",
+            "--hidden-import=PySide6.QtCore",
+            "--hidden-import=PySide6.QtGui",
+            "--hidden-import=http.client",
+            "--hidden-import=charset_normalizer",
+            "--hidden-import=idna",
+            "--hidden-import=email",
+            "--hidden-import=email.mime",
+            "--hidden-import=email.mime.text",
+            "--hidden-import=email.mime.multipart",
+            "--hidden-import=OpenSSL",
+            "--hidden-import=OpenSSL.SSL",
+            "--hidden-import=OpenSSL.crypto",
+            "--hidden-import=cryptography",
+            "--hidden-import=cryptography.hazmat",
+            "--hidden-import=cryptography.hazmat.backends",
+            "--hidden-import=cryptography.hazmat.primitives",
+            "--hidden-import=cryptography.hazmat.primitives.asymmetric",
+            "--hidden-import=cryptography.x509",
+            "--hidden-import=werkzeug",
+            "--hidden-import=werkzeug.serving",
+            "--hidden-import=asgiref.sync",
+            "--hidden-import=dotenv",
+            "--hidden-import=base64",
+            "--hidden-import=uuid",
+            "--hidden-import=json",
+            "--hidden-import=re",
+            "--hidden-import=threading",
+            "--hidden-import=time",
+            "--hidden-import=logging",
+            "--hidden-import=mimetypes",
+            "--hidden-import=traceback",
+            "--hidden-import=shutil",
+            "--hidden-import=signal",
+            "--hidden-import=atexit",
+            "--hidden-import=concurrent",
+            "--hidden-import=concurrent.futures",
+            "--hidden-import=urllib.parse",
+            "--hidden-import=tempfile",
+            
+            # 排除不必要的模块
+            "--exclude-module=tkinter",
+            "--exclude-module=test",
+            "--exclude-module=unittest",
+            "--exclude-module=_curses",
+            "--exclude-module=watchdog",
+            "--exclude-module=socks",
+            "--exclude-module=h2",
+            "--exclude-module=brotli",
+            "--exclude-module=brotlicffi",
+            "--exclude-module=zstandard",
+            "--exclude-module=js",
+            "--exclude-module=pyodide",
+            "--exclude-module=simplejson",
+            "--exclude-module=pydoc",
+            "--exclude-module=doctest",
+            "--exclude-module=pdb",
+            "--exclude-module=multiprocessing",
+            
+            # 添加额外的二进制文件（如果需要）
+            "--collect-binaries=mutagen",
+            "--collect-binaries=cryptography",
+            
+            "app_gui.py"
+        ]
+        
+        print("开始构建...")
+        print("命令:", " ".join(cmd))
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
+        
+        print("\n构建完成!")
+        print("返回码:", result.returncode)
+        
+        if result.stdout:
+            print("\n标准输出:")
+            print(result.stdout)
+        
+        if result.stderr:
+            print("\n标准错误:")
+            print(result.stderr)
+        
+        # 检查构建是否成功
+        if result.returncode == 0:
+            dist_path = os.path.join("dist", "MusicMetadataProcessor.exe")
+            if os.path.exists(dist_path):
+                print(f"\n✅ 构建成功！可执行文件位置: {dist_path}")
+                print(f"文件大小: {os.path.getsize(dist_path) / (1024*1024):.2f} MB")
+            else:
+                print("\n❌ 构建完成但未找到可执行文件")
+                return 1
+        else:
+            print("\n❌ 构建失败！")
+            return result.returncode
+        
+        return result.returncode
+        
+    except Exception as e:
+        print(f"构建过程中发生错误: {e}")
+        traceback.print_exc()
+        return 1
+        
+    finally:
+        # 清理临时文件
+        try:
+            if os.path.exists(temp_dir):
+                import shutil
+                shutil.rmtree(temp_dir)
+                print(f"已清理临时目录: {temp_dir}")
+        except Exception as e:
+            print(f"清理临时文件时出错: {e}")
 
-env:
-  PYTHON_VERSION: '3.10'  # 根据你的项目需求调整
-
-jobs:
-  build-windows:
-    strategy:
-      matrix:
-        arch: [x64, x86]
-        include:
-          - arch: x64
-            python_arch: 'x64'
-            artifact_suffix: 'windows-x64'
-          - arch: x86
-            python_arch: 'x86'
-            artifact_suffix: 'windows-x86'
-
-    runs-on: windows-latest
-    name: Build Windows ${{ matrix.arch }}
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Python ${{ env.PYTHON_VERSION }} (${{ matrix.python_arch }})
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-        architecture: ${{ matrix.python_arch }}
-
-    - name: Display Python version and architecture
-      run: |
-        python --version
-        python -c "import struct; print(f'Python架构: {struct.calcsize(\"P\") * 8}-bit')"
-
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install wheel setuptools
-        # 安装项目依赖（如果有requirements.txt）
-        if exist requirements.txt (
-          pip install -r requirements.txt
-        )
-        # 安装构建依赖
-        pip install pyinstaller
-        # 安装你的应用可能需要的其他依赖
-        pip install flask flask_cors mutagen requests PySide6
-
-    - name: Create project icon (if missing)
-      run: |
-        # 如果图标文件不存在，创建一个简单的占位图标
-        if not exist "icon.ico" (
-          echo "创建默认图标文件..."
-          # 这里可以添加创建默认图标的命令，或者跳过图标使用
-          echo "警告: 使用默认图标或跳过图标"
-        ) else (
-          echo "找到图标文件: icon.ico"
-        )
-
-    - name: Run PyInstaller build script
-      run: |
-        # 修改图标路径为相对路径或项目内的路径
-        python build_final.py
-        echo "构建完成!"
-
-    - name: Verify executable
-      run: |
-        if exist "dist\MusicMetadataProcessor.exe" (
-          echo "✅ 可执行文件创建成功"
-          dir "dist\MusicMetadataProcessor.exe"
-          # 检查文件大小
-          $file = Get-Item "dist\MusicMetadataProcessor.exe"
-          $sizeMB = $file.Length / 1MB
-          echo "文件大小: $sizeMB MB"
-        ) else (
-          echo "❌ 可执行文件未找到"
-          Get-ChildItem -Recurse
-          exit 1
-        )
-
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: MusicMetadataProcessor-${{ matrix.artifact_suffix }}
-        path: dist/MusicMetadataProcessor.exe
-        if-no-files-found: error
-        retention-days: 7
-
-  # 可选：创建发布版本
-  create-release:
-    needs: build-windows
-    if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
-    name: Create Release
-
-    steps:
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: ./artifacts
-
-    - name: List downloaded artifacts
-      run: |
-        ls -la ./artifacts/
-        find ./artifacts -name "*.exe" -type f
-
-    - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ github.ref }}
-        release_name: Release ${{ github.ref }}
-        draft: false
-        prerelease: false
-        body: |
-          自动构建的 Windows 可执行文件
-          包含 x64 和 x86 架构版本
-
-    - name: Upload Windows x64 Release Asset
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./artifacts/MusicMetadataProcessor-windows-x64/MusicMetadataProcessor.exe
-        asset_name: MusicMetadataProcessor-${{ github.ref_name }}-windows-x64.exe
-        asset_content_type: application/vnd.microsoft.portable-executable
-
-    - name: Upload Windows x86 Release Asset
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./artifacts/MusicMetadataProcessor-windows-x86/MusicMetadataProcessor.exe
-        asset_name: MusicMetadataProcessor-${{ github.ref_name }}-windows-x86.exe
-        asset_content_type: application/vnd.microsoft.portable-executable
-
-  # 可选：测试构建结果
-  test-build:
-    needs: build-windows
-    runs-on: windows-latest
-    name: Test Build Results
-
-    steps:
-    - name: Download artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: ./downloaded-artifacts
-
-    - name: Verify artifacts
-      run: |
-        echo "下载的artifacts:"
-        Get-ChildItem -Recurse ./downloaded-artifacts
-        # 检查文件是否存在
-        $x64Exists = Test-Path "./downloaded-artifacts/MusicMetadataProcessor-windows-x64/MusicMetadataProcessor.exe"
-        $x86Exists = Test-Path "./downloaded-artifacts/MusicMetadataProcessor-windows-x86/MusicMetadataProcessor.exe"
-        echo "x64 版本存在: $x64Exists"
-        echo "x86 版本存在: $x86Exists"
-        if (-not $x64Exists -or -not $x86Exists) {
-          exit 1
-        }
+if __name__ == "__main__":
+    sys.exit(build_final())
