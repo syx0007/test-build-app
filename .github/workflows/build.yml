@@ -1,199 +1,74 @@
-name: Build Music Metadata Processor
+name: Build Windows Executable
 
 on:
   push:
-    tags: ['v*']
-  workflow_dispatch:
+    tags:
+      - 'v*'  # 当推送标签时触发构建
+  workflow_dispatch:  # 允许手动触发
 
 jobs:
   build-windows:
     strategy:
       matrix:
-        arch: [x64, x86]
+        python-version: ['3.10']
+        architecture: [x64, x86]
         include:
-          - arch: x64
+          - architecture: x64
             python-arch: 64
-          - arch: x86
+          - architecture: x86
             python-arch: 32
+
     runs-on: windows-latest
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
       with:
-        python-version: '3.10'
+        python-version: ${{ matrix.python-version }}
         architecture: ${{ matrix.python-arch }}
+
+    - name: Display Python version
+      run: python --version
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pyinstaller
+        pip install PyInstaller flask flask-cors mutagen requests PySide6
 
-    - name: Download icon for Windows
+    - name: Create icon directory
       run: |
-        # 如果图标文件不存在，创建一个占位符或者跳过
-        if (!(Test-Path "icon.ico")) {
-          Write-Host "图标文件不存在，使用默认构建"
+        New-Item -ItemType Directory -Path "D:/moe-n/Desktop/app" -Force
+        # 复制图标文件（如果有）
+        if (Test-Path "icon.ico") {
+          Copy-Item "icon.ico" "D:/moe-n/Desktop/app/icon.ico" -Force
         }
 
-    - name: Build Windows executable (${{ matrix.arch }})
-      run: |
-        python build_final.py
-        if ($LASTEXITCODE -ne 0) {
-          exit $LASTEXITCODE
-        }
+    - name: Run build script
+      run: python build_final.py
+      env:
+        PYTHONUTF8: 1
 
     - name: Rename artifact with architecture
       run: |
-        $original = "dist/MusicMetadataProcessor.exe"
-        $newName = "dist/MusicMetadataProcessor_win_${{ matrix.arch }}.exe"
-        if (Test-Path $original) {
-          Move-Item $original $newName
-          Write-Host "重命名为: $newName"
+        $oldPath = "dist/MusicMetadataProcessor.exe"
+        $newPath = "dist/MusicMetadataProcessor_${{ matrix.architecture }}.exe"
+        if (Test-Path $oldPath) {
+          Rename-Item $oldPath $newPath
         }
 
-    - name: Upload Windows artifact
+    - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: MusicMetadataProcessor_win_${{ matrix.arch }}
-        path: dist/MusicMetadataProcessor_win_${{ matrix.arch }}.exe
+        name: MusicMetadataProcessor_${{ matrix.architecture }}
+        path: dist/MusicMetadataProcessor_${{ matrix.architecture }}.exe
 
-  build-macos:
-    runs-on: macos-latest
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-
-    - name: Install macOS dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pyinstaller
-
-    - name: Build macOS application
-      run: |
-        # 为 macOS 创建专门的构建脚本
-        python -m PyInstaller \
-          --onefile \
-          --windowed \
-          --name=MusicMetadataProcessor \
-          --clean \
-          --noconfirm \
-          --hidden-import=flask \
-          --hidden-import=flask_cors \
-          --hidden-import=mutagen \
-          --hidden-import=mutagen.id3 \
-          --hidden-import=mutagen.mp3 \
-          --hidden-import=mutagen.flac \
-          --hidden-import=mutagen.oggvorbis \
-          --hidden-import=mutagen.mp4 \
-          --hidden-import=mutagen.wave \
-          --hidden-import=mutagen.aiff \
-          --hidden-import=requests \
-          --hidden-import=requests.adapters \
-          --hidden-import=urllib3 \
-          --hidden-import=urllib3.util \
-          --hidden-import=urllib3.util.retry \
-          --hidden-import=urllib3.util.connection \
-          --hidden-import=urllib3.contrib \
-          --hidden-import=urllib3.contrib.pyopenssl \
-          --hidden-import=PySide6 \
-          --hidden-import=PySide6.QtWidgets \
-          --hidden-import=PySide6.QtCore \
-          --hidden-import=PySide6.QtGui \
-          --hidden-import=http.client \
-          --hidden-import=charset_normalizer \
-          --hidden-import=idna \
-          --hidden-import=email \
-          --hidden-import=email.mime \
-          --hidden-import=email.mime.text \
-          --hidden-import=email.mime.multipart \
-          --hidden-import=OpenSSL \
-          --hidden-import=OpenSSL.SSL \
-          --hidden-import=OpenSSL.crypto \
-          --hidden-import=cryptography \
-          --hidden-import=cryptography.hazmat \
-          --hidden-import=cryptography.hazmat.backends \
-          --hidden-import=cryptography.hazmat.primitives \
-          --hidden-import=cryptography.hazmat.primitives.asymmetric \
-          --hidden-import=cryptography.x509 \
-          --hidden-import=werkzeug \
-          --hidden-import=werkzeug.serving \
-          --hidden-import=asgiref.sync \
-          --hidden-import=dotenv \
-          --hidden-import=base64 \
-          --hidden-import=uuid \
-          --hidden-import=json \
-          --hidden-import=re \
-          --hidden-import=threading \
-          --hidden-import=time \
-          --hidden-import=logging \
-          --hidden-import=mimetypes \
-          --hidden-import=traceback \
-          --hidden-import=shutil \
-          --hidden-import=signal \
-          --hidden-import=atexit \
-          --hidden-import=concurrent \
-          --hidden-import=concurrent.futures \
-          --hidden-import=urllib.parse \
-          --hidden-import=tempfile \
-          --exclude-module=tkinter \
-          --exclude-module=test \
-          --exclude-module=unittest \
-          --exclude-module=_curses \
-          --exclude-module=watchdog \
-          --exclude-module=socks \
-          --exclude-module=h2 \
-          --exclude-module=brotli \
-          --exclude-module=brotlicffi \
-          --exclude-module=zstandard \
-          --exclude-module=js \
-          --exclude-module=pyodide \
-          --exclude-module=simplejson \
-          --exclude-module=pydoc \
-          --exclude-module=doctest \
-          --exclude-module=pdb \
-          --exclude-module=multiprocessing \
-          --collect-binaries=mutagen \
-          --collect-binaries=cryptography \
-          app_gui.py
-
-    - name: Rename macOS executable
-      run: |
-        mv dist/MusicMetadataProcessor dist/MusicMetadataProcessor_mac
-
-    - name: Upload macOS artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: MusicMetadataProcessor_mac
-        path: dist/MusicMetadataProcessor_mac
-
-  create-release:
-    needs: [build-windows, build-macos]
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-    steps:
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: ./artifacts
-
-    - name: List artifacts
-      run: ls -la ./artifacts/
-
-    - name: Create Release
+    - name: Create release on tag
+      if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       with:
-        files: |
-          ./artifacts/**/*
-        generate_release_notes: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        files: dist/MusicMetadataProcessor_${{ matrix.architecture }}.exe
+        draft: false
+        prerelease: false
