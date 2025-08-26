@@ -1,4 +1,4 @@
-name: Build Windows Executables (x64 + x86)
+name: Build Windows Executables
 
 on:
   push:
@@ -11,14 +11,15 @@ jobs:
       matrix:
         include:
           - architecture: x64
+            target: x86_64
             python_version: '3.10'
-            artifact_suffix: 'windows-x64'
+            artifact_name: windows-x64
           - architecture: x86
+            target: x86
             python_version: '3.10'
-            artifact_suffix: 'windows-x86'
+            artifact_name: windows-x86
 
     runs-on: windows-latest
-    name: Build Windows ${{ matrix.architecture }}
 
     steps:
     - name: Checkout code
@@ -30,60 +31,158 @@ jobs:
         python-version: ${{ matrix.python_version }}
         architecture: ${{ matrix.architecture }}
 
-    - name: Display Python info (FIXED)
+    - name: Display Python info
       run: |
         python --version
-        python -c "import platform; print('Architecture: ' + platform.machine())"
-        python -c "import struct; print('Pointer size: ' + str(struct.calcsize('P') * 8) + '-bit')"
+        python -c "import platform; print(f'Architecture: {platform.machine()}')"
+        python -c "import struct; print(f'Pointer size: {struct.calcsize('P') * 8} bits')"
 
     - name: Install dependencies
       run: |
+        # 设置 pip 重试和超时
         python -m pip install --upgrade pip
+        pip config set global.timeout 120
+        pip config set global.retries 3
+        
+        # 安装核心依赖
+        echo "正在安装核心依赖..."
         pip install pyinstaller==6.15.0 flask==3.1.2 mutagen==1.47.0 requests==2.32.5 flask_cors==4.0.0
+        
+        # 安装 PySide6
+        echo "正在安装 PySide6..."
         pip install "pyside6==6.6.1" --timeout=180
+        
+        # 验证安装
+        python -c "import flask_cors; print(f'flask_cors version: {flask_cors.__version__}')"
+        python -c "import PySide6; print(f'PySide6 version: {PySide6.__version__}')"
+        python -c "import sys; print(f'Python executable: {sys.executable}')"
 
-    - name: Build executable
+    - name: Create icon file if missing
       run: |
-        # 检查图标文件
-        $iconOption = ""
-        if (Test-Path "icon.ico") {
-          $iconOption = "--icon=icon.ico --add-data `"icon.ico;.`""
+        # 如果图标不存在，创建一个简单的占位图标
+        if (-not (Test-Path "icon.ico")) {
+          echo "图标文件不存在，创建占位图标..."
+          # 使用 PowerShell 创建一个简单的 ico 文件（如果需要）
+          # 或者使用在线工具生成后上传到仓库
+          echo "建议：请将 icon.ico 文件添加到代码仓库中"
+          # 创建一个空文件作为占位符
+          New-Item -ItemType File -Name "icon.ico" -Force
         }
+
+    - name: Build executable for ${{ matrix.target }}
+      run: |
+        # 设置构建参数
+        $buildName = "MusicMetadataProcessor_${{ matrix.target }}"
+        $outputName = "MusicMetadataProcessor_windows_${{ matrix.target }}.exe"
         
-        # 使用单引号避免转义问题
-        $buildCmd = @'
-python -m PyInstaller `
-  --onefile `
-  --windowed `
-  --name MusicMetadataProcessor `
-'@ + $iconOption + @'
-  --hidden-import=flask `
-  --hidden-import=flask_cors `
-  --hidden-import=mutagen `
-  --hidden-import=requests `
-  --hidden-import=PySide6 `
-  --hidden-import=PySide6.QtWidgets `
-  --hidden-import=PySide6.QtCore `
-  --hidden-import=PySide6.QtGui `
-  --clean `
-  --noconfirm `
-  app_gui.py
-'@
+        Write-Output "开始构建 ${{ matrix.target }} 架构的可执行文件..."
+        Write-Output "输出文件名: $outputName"
         
-        Write-Output "执行构建命令..."
-        Invoke-Expression $buildCmd
+        # 构建命令
+        python -m PyInstaller `
+          --onefile `
+          --windowed `
+          --name $buildName `
+          --icon=icon.ico `
+          --add-data "icon.ico;." `
+          --hidden-import=flask `
+          --hidden-import=flask_cors `
+          --hidden-import=flask_cors.core `
+          --hidden-import=mutagen `
+          --hidden-import=requests `
+          --hidden-import=PySide6 `
+          --hidden-import=PySide6.QtWidgets `
+          --hidden-import=PySide6.QtCore `
+          --hidden-import=PySide6.QtGui `
+          --hidden-import=PySide6.QtNetwork `
+          --hidden-import=werkzeug.serving `
+          --hidden-import=werkzeug.middleware.dispatcher `
+          --hidden-import=chardet `
+          --hidden-import=charset_normalizer `
+          --hidden-import=idna `
+          --hidden-import=urllib3 `
+          --hidden-import=certifi `
+          --hidden-import=ssl `
+          --hidden-import=json `
+          --hidden-import=os `
+          --hidden-import=sys `
+          --hidden-import=threading `
+          --hidden-import=time `
+          --hidden-import=re `
+          --hidden-import=base64 `
+          --hidden-import=hashlib `
+          --clean `
+          --noconfirm `
+          app_gui.py
         
-        if (Test-Path "dist/MusicMetadataProcessor.exe") {
-          $newName = "MusicMetadataProcessor_${{ matrix.artifact_suffix }}.exe"
-          Move-Item "dist/MusicMetadataProcessor.exe" "dist/$newName"
-          Write-Output "✅ 构建成功: $newName"
+        # 检查构建是否成功
+        if (Test-Path "dist/$buildName.exe") {
+          echo "✅ ${{ matrix.target }} 架构构建成功！"
+          # 重命名以包含架构信息
+          Move-Item "dist/$buildName.exe" "dist/$outputName"
+          # 显示文件信息
+          Get-Item "dist/$outputName" | Format-List Name, Length, LastWriteTime
         } else {
-          Write-Output "❌ 构建失败"
+          echo "❌ ${{ matrix.target }} 架构构建失败，输出文件不存在"
+          Get-ChildItem -Recurse -Filter "*.exe" | ForEach-Object { Write-Output "找到的文件: $($_.FullName)" }
           exit 1
         }
 
-    - name: Upload artifacts
+    - name: Upload ${{ matrix.artifact_name }} artifact
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ matrix.artifact_suffix }}
-        path: dist/MusicMetadataProcessor_${{ matrix.artifact_suffix }}.exe
+        name: ${{ matrix.artifact_name }}
+        path: dist/
+        if-no-files-found: error
+
+  create-release:
+    needs: build-windows
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+        pattern: windows-*
+        merge-multiple: true
+
+    - name: List downloaded files
+      run: |
+        echo "下载的文件列表："
+        find artifacts -type f -name "*.exe" | while read file; do
+          echo " - $file"
+          ls -la "$file"
+        done
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          artifacts/**/*.exe
+        body: |
+          # 音乐元数据处理器
+          
+          ## 版本信息
+          - 构建时间: ${{ github.event.repository.updated_at }}
+          - Python版本: 3.10
+          - 包含架构: x86 (32位) 和 x64 (64位)
+          
+          ## 文件说明
+          - `MusicMetadataProcessor_windows_x86.exe`: 32位版本，兼容性更好
+          - `MusicMetadataProcessor_windows_x86_64.exe`: 64位版本，性能更优
+          
+          ## 使用说明
+          1. 根据您的系统架构选择合适的版本下载
+          2. 双击运行即可
+          
+          ## 系统要求
+          - Windows 7 或更高版本
+          - 需要 Visual C++ Redistributable (通常系统已自带)
+          
+          ## 注意事项
+          - 首次运行可能会被Windows Defender拦截，请选择"更多信息"->"仍要运行"
+          - 建议使用64位系统下载64位版本以获得更好性能
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
