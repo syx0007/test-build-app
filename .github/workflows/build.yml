@@ -1,173 +1,148 @@
-name: Build Windows Executables
+name: Build X86
 
 on:
   push:
-    tags:
-      - 'v*'  # 版本标签触发，如 v1.0.0, v2.1.0
-  pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:  # 允许手动触发
-
-env:
-  PYTHON_VERSION: '3.10'  # 根据你的项目需求调整
+    tags: ['v*']
+  workflow_dispatch:
 
 jobs:
   build-windows:
     strategy:
       matrix:
-        arch: [x64, x86]
         include:
-          - arch: x64
-            python_arch: 'x64'
-            artifact_suffix: 'windows-x64'
-          - arch: x86
-            python_arch: 'x86'
-            artifact_suffix: 'windows-x86'
+          - architecture: x64
+            target: x86_64
+            python_version: '3.10'
 
     runs-on: windows-latest
-    name: Build Windows ${{ matrix.arch }}
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Set up Python ${{ env.PYTHON_VERSION }} (${{ matrix.python_arch }})
-      uses: actions/setup-python@v5
+    - name: Set up Python ${{ matrix.python_version }}
+      uses: actions/setup-python@v4
       with:
-        python-version: ${{ env.PYTHON_VERSION }}
-        architecture: ${{ matrix.python_arch }}
+        python-version: ${{ matrix.python_version }}
+        architecture: ${{ matrix.architecture }}
 
-    - name: Display Python version and architecture
+    - name: Display Python info
       run: |
         python --version
-        python -c "import struct; print(f'Python架构: {struct.calcsize(\"P\") * 8}-bit')"
-
-    - name: Install dependencies
+        python -c "import platform; print(f'Architecture: {platform.machine()}')"
+    - name: Install dependencies with retry
       run: |
+        # 设置 pip 重试和超时
         python -m pip install --upgrade pip
-        pip install wheel setuptools
-        # 安装项目依赖（如果有requirements.txt）
-        if exist requirements.txt (
-          pip install -r requirements.txt
-        )
-        # 安装构建依赖
-        pip install pyinstaller
-        # 安装你的应用可能需要的其他依赖
-        pip install flask flask_cors mutagen requests PySide6
-
-    - name: Create project icon (if missing)
+        pip config set global.timeout 120
+        pip config set global.retries 3
+        
+        # 安装所有依赖，包括 flask_cors
+        pip install pyinstaller==6.15.0 flask==3.1.2 mutagen==1.47.0 requests==2.32.5 flask_cors==4.0.0
+        
+        # 安装 PySide6
+        echo "正在安装 PySide6..."
+        pip install "pyside6==6.6.1" --timeout=180
+        
+        # 验证安装
+        python -c "import flask_cors; print(f'flask_cors version: {flask_cors.__version__}')"
+        python -c "import PySide6; print(f'PySide6 version: {PySide6.__version__}')"
+    - name: Create icon file if missing
       run: |
-        # 如果图标文件不存在，创建一个简单的占位图标
-        if not exist "icon.ico" (
-          echo "创建默认图标文件..."
-          # 这里可以添加创建默认图标的命令，或者跳过图标使用
-          echo "警告: 使用默认图标或跳过图标"
-        ) else (
-          echo "找到图标文件: icon.ico"
-        )
-
-    - name: Run PyInstaller build script
+        # 如果图标不存在，创建一个简单的占位图标
+        if (-not (Test-Path "icon.ico")) {
+          echo "图标文件不存在，创建占位图标..."
+          # 这里可以添加创建简单图标的逻辑，或者跳过图标参数
+          # 暂时先创建一个空文件
+          echo "placeholder" > icon.ico
+        }
+    - name: Build executable
       run: |
-        # 修改图标路径为相对路径或项目内的路径
-        python build_final.py
-        echo "构建完成!"
-
-    - name: Verify executable
-      run: |
-        if exist "dist\MusicMetadataProcessor.exe" (
-          echo "✅ 可执行文件创建成功"
-          dir "dist\MusicMetadataProcessor.exe"
-          # 检查文件大小
-          $file = Get-Item "dist\MusicMetadataProcessor.exe"
-          $sizeMB = $file.Length / 1MB
-          echo "文件大小: $sizeMB MB"
-        ) else (
-          echo "❌ 可执行文件未找到"
-          Get-ChildItem -Recurse
+        # 设置构建参数
+        $buildName = "MusicMetadataProcessor_${{ matrix.target }}"
+        
+        # 构建命令，添加 flask_cors 相关隐藏导入
+        python -m PyInstaller `
+          --onefile `
+          --windowed `
+          --name $buildName `
+          --icon=icon.ico `
+          --add-data "icon.ico;." `
+          --hidden-import=flask `
+          --hidden-import=flask_cors `
+          --hidden-import=flask_cors.core `
+          --hidden-import=mutagen `
+          --hidden-import=requests `
+          --hidden-import=PySide6 `
+          --hidden-import=PySide6.QtWidgets `
+          --hidden-import=PySide6.QtCore `
+          --hidden-import=PySide6.QtGui `
+          --hidden-import=PySide6.QtNetwork `
+          --hidden-import=werkzeug.serving `
+          --hidden-import=werkzeug.middleware.dispatcher `
+          --hidden-import=chardet `
+          --hidden-import=charset_normalizer `
+          --hidden-import=idna `
+          --hidden-import=urllib3 `
+          --hidden-import=certifi `
+          --hidden-import=ssl `
+          --hidden-import=json `
+          --hidden-import=os `
+          --hidden-import=sys `
+          --hidden-import=threading `
+          --hidden-import=time `
+          --hidden-import=re `
+          --hidden-import=base64 `
+          --hidden-import=hashlib `
+          --clean `
+          --noconfirm `
+          app_gui.py
+        # 检查构建是否成功
+        if (Test-Path "dist/$buildName.exe") {
+          echo "✅ 构建成功！"
+          # 重命名以包含架构信息
+          Move-Item "dist/$buildName.exe" "dist/MusicMetadataProcessor_windows_${{ matrix.target }}.exe"
+        } else {
+          echo "❌ 构建失败，输出文件不存在"
           exit 1
-        )
-
-    - name: Upload artifact
+        }
+    - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: MusicMetadataProcessor-${{ matrix.artifact_suffix }}
-        path: dist/MusicMetadataProcessor.exe
+        name: windows-${{ matrix.target }}-build
+        path: dist/
         if-no-files-found: error
-        retention-days: 7
 
-  # 可选：创建发布版本
   create-release:
     needs: build-windows
-    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
-    name: Create Release
-
+    if: startsWith(github.ref, 'refs/tags/')
+    
     steps:
     - name: Download all artifacts
       uses: actions/download-artifact@v4
       with:
-        path: ./artifacts
-
-    - name: List downloaded artifacts
-      run: |
-        ls -la ./artifacts/
-        find ./artifacts -name "*.exe" -type f
+        path: artifacts
 
     - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: softprops/action-gh-release@v1
       with:
-        tag_name: ${{ github.ref }}
-        release_name: Release ${{ github.ref }}
-        draft: false
-        prerelease: false
+        files: |
+          artifacts/**/*.exe
         body: |
-          自动构建的 Windows 可执行文件
-          包含 x64 和 x86 架构版本
-
-    - name: Upload Windows x64 Release Asset
-      uses: actions/upload-release-asset@v1
+          # 音乐元数据处理器
+          ## 版本信息
+          - 构建时间: ${{ github.event.repository.updated_at }}
+          - Python版本: 3.10
+          - 架构: x86_64 (64位)
+          ## 使用说明
+          1. 下载对应的可执行文件
+          2. 双击运行即可
+          ## 系统要求
+          - Windows 7 或更高版本
+          - .NET Framework 4.5 或更高版本
+          ## 注意事项
+          - 首次运行可能会被Windows Defender拦截，请选择"更多信息"->"仍要运行"
+          - 确保系统中已安装必要的Visual C++运行时库
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./artifacts/MusicMetadataProcessor-windows-x64/MusicMetadataProcessor.exe
-        asset_name: MusicMetadataProcessor-${{ github.ref_name }}-windows-x64.exe
-        asset_content_type: application/vnd.microsoft.portable-executable
-
-    - name: Upload Windows x86 Release Asset
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./artifacts/MusicMetadataProcessor-windows-x86/MusicMetadataProcessor.exe
-        asset_name: MusicMetadataProcessor-${{ github.ref_name }}-windows-x86.exe
-        asset_content_type: application/vnd.microsoft.portable-executable
-
-  # 可选：测试构建结果
-  test-build:
-    needs: build-windows
-    runs-on: windows-latest
-    name: Test Build Results
-
-    steps:
-    - name: Download artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: ./downloaded-artifacts
-
-    - name: Verify artifacts
-      run: |
-        echo "下载的artifacts:"
-        Get-ChildItem -Recurse ./downloaded-artifacts
-        # 检查文件是否存在
-        $x64Exists = Test-Path "./downloaded-artifacts/MusicMetadataProcessor-windows-x64/MusicMetadataProcessor.exe"
-        $x86Exists = Test-Path "./downloaded-artifacts/MusicMetadataProcessor-windows-x86/MusicMetadataProcessor.exe"
-        echo "x64 版本存在: $x64Exists"
-        echo "x86 版本存在: $x86Exists"
-        if (-not $x64Exists -or -not $x86Exists) {
-          exit 1
-        }
