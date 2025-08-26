@@ -36,30 +36,53 @@ jobs:
         python --version
         python -c "import platform; print('Architecture: ' + platform.machine())"
         python -c "import struct; print('Pointer size: ' + str(struct.calcsize('P') * 8) + ' bits')"
+        python -c "import sys; print('Python executable: ' + sys.executable)"
 
     - name: Install dependencies
       run: |
         # 设置 pip 重试和超时
         python -m pip install --upgrade pip
-        pip config set global.timeout 120
-        pip config set global.retries 3
+        pip config set global.timeout 300
+        pip config set global.retries 5
         
         # 安装核心依赖
         echo "正在安装核心依赖..."
         pip install pyinstaller==6.15.0 flask==3.1.2 mutagen==1.47.0 requests==2.32.5 flask_cors==4.0.0
         
-        # 安装 PySide6
+        # 安装 PySide6 - 使用更稳定的方式
         echo "正在安装 PySide6..."
-        pip install "pyside6==6.6.1" --timeout=180
+        pip install "pyside6==6.6.1" --timeout=600 --retries=5
         
-        # 验证安装
-        python -c "import flask_cors; print('flask_cors version:', flask_cors.__version__)"
-        python -c "import PySide6; print('PySide6 version:', PySide6.__version__)"
-        python -c "import sys; print('Python executable:', sys.executable)"
+        # 详细验证 PySide6 安装
+        echo "=== 验证 PySide6 安装 ==="
+        python -c "
+import sys
+print(f'Python executable: {sys.executable}')
+print(f'System architecture: {platform.machine()}')
+print(f'Python architecture: {\"64-bit\" if sys.maxsize > 2**32 else \"32-bit\"}')
+
+try:
+    import PySide6
+    print(f'✅ PySide6 version: {PySide6.__version__}')
+    print(f'PySide6 path: {PySide6.__file__}')
+    
+    # 测试基本功能
+    from PySide6.QtCore import QSize
+    from PySide6.QtWidgets import QApplication
+    print('✅ PySide6 基本功能测试通过')
+    
+except ImportError as e:
+    print(f'❌ PySide6 导入失败: {e}')
+    print('已安装的包:')
+    import pkg_resources
+    for pkg in pkg_resources.working_set:
+        if 'pyside' in pkg.key.lower() or 'qt' in pkg.key.lower():
+            print(f'  {pkg.key}=={pkg.version}')
+    exit(1)
+"
 
     - name: Create icon file if missing
       run: |
-        # 如果图标不存在，创建一个简单的占位图标
         if (-not (Test-Path "icon.ico")) {
           echo "图标文件不存在，创建占位图标..."
           New-Item -ItemType File -Name "icon.ico" -Force
@@ -72,6 +95,9 @@ jobs:
         $outputName = "MusicMetadataProcessor_windows_${{ matrix.target }}.exe"
         
         Write-Output "开始构建 ${{ matrix.target }} 架构的可执行文件..."
+        
+        # 再次验证 PySide6 可用性
+        python -c "import PySide6; print('PySide6 可用性确认成功')"
         
         # 构建命令
         python -m PyInstaller `
@@ -110,7 +136,6 @@ jobs:
           --noconfirm `
           app_gui.py
         
-        # 检查构建是否成功
         if (Test-Path "dist/$buildName.exe") {
           echo "✅ ${{ matrix.target }} 架构构建成功！"
           Move-Item "dist/$buildName.exe" "dist/$outputName"
@@ -156,9 +181,5 @@ jobs:
           ## 文件说明
           - `MusicMetadataProcessor_windows_x86.exe`: 32位版本
           - `MusicMetadataProcessor_windows_x86_64.exe`: 64位版本
-          
-          ## 使用说明
-          1. 根据系统架构选择合适的版本
-          2. 双击运行即可
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
