@@ -5,34 +5,33 @@ import tempfile
 import traceback
 
 def build_final():
-    # 检查是否在 GitHub Actions 环境中
-    is_github_actions = os.environ.get('GITHUB_ACTIONS') == 'true'
+    # 检查图标文件是否存在（支持多种路径）
+    icon_paths = [
+        "D:/moe-n/Desktop/app/icon.ico",
+        "icon.ico",
+        "./icon.ico",
+        os.path.join(os.path.dirname(__file__), "icon.ico")
+    ]
     
-    # 图标处理 - 只在 Windows 上使用图标
-    icon_path = "icon.ico"
-    icon_option = []
+    icon_path = None
+    for path in icon_paths:
+        if os.path.exists(path):
+            icon_path = path
+            break
     
-    if os.name == 'nt' and os.path.exists(icon_path):
-        try:
-            # 在 GitHub Actions 中直接使用当前目录的图标
-            if is_github_actions:
-                icon_option = [f"--icon={icon_path}"]
-                print(f"使用图标: {icon_path}")
-            else:
-                # 本地开发环境使用原来的逻辑
-                temp_dir = tempfile.mkdtemp()
-                temp_icon_path = os.path.join(temp_dir, "icon.ico")
-                
-                with open(icon_path, 'rb') as src:
-                    with open(temp_icon_path, 'wb') as dst:
-                        dst.write(src.read())
-                
-                icon_option = [f"--icon={temp_icon_path}"]
-                print(f"使用图标: {icon_path}")
-                
-        except Exception as e:
-            print(f"图标处理失败: {e}")
-            print("继续构建，但不使用图标")
+    if not icon_path:
+        print("警告: 未找到图标文件，将使用默认图标")
+        # 在 GitHub Actions 中继续构建，只是没有图标
+        icon_option = []
+    else:
+        print(f"使用图标: {icon_path}")
+        icon_option = [f"--icon={icon_path}"]
+    
+    # 添加数据文件选项
+    add_data_options = []
+    if icon_path and icon_path != "D:/moe-n/Desktop/app/icon.ico":
+        # 只有在图标文件在项目目录中时才添加
+        add_data_options = ["--add-data", f"{icon_path};."]
     
     # 构建命令
     cmd = [
@@ -45,6 +44,9 @@ def build_final():
         
         # 添加图标参数（如果有）
         *icon_option,
+        
+        # 添加数据文件（如果有）
+        *add_data_options,
         
         # 必需的隐藏导入
         "--hidden-import=flask",
@@ -153,8 +155,9 @@ def build_final():
         if result.returncode == 0:
             dist_path = os.path.join("dist", "MusicMetadataProcessor.exe")
             if os.path.exists(dist_path):
+                file_size = os.path.getsize(dist_path) / (1024*1024)
                 print(f"\n✅ 构建成功！可执行文件位置: {dist_path}")
-                print(f"文件大小: {os.path.getsize(dist_path) / (1024*1024):.2f} MB")
+                print(f"文件大小: {file_size:.2f} MB")
             else:
                 print("\n❌ 构建完成但未找到可执行文件")
                 return 1
