@@ -5,22 +5,26 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
+# 设置超时时间，防止 x86 构建被取消
+timeout-minutes: 30
+
 jobs:
   build-windows:
     strategy:
       matrix:
         include:
           - architecture: x64
-            target: x86_64
             python_version: '3.10'
             artifact_suffix: 'windows-x64'
           - architecture: x86
-            target: i686
             python_version: '3.10'
             artifact_suffix: 'windows-x86'
 
     runs-on: windows-latest
     name: Build Windows ${{ matrix.architecture }}
+
+    # 为 x86 架构设置更长的超时时间
+    timeout-minutes: ${{ matrix.architecture == 'x86' && 45 || 25 }}
 
     steps:
     - name: Checkout code
@@ -36,89 +40,92 @@ jobs:
       run: |
         python --version
         python -c "import platform; print(f'Architecture: {platform.machine()}')"
-        python -c "import struct; print(f'Pointer size: {struct.calcsize(\"P\") * 8}-bit')"
+        python -c "import struct; print(f'Pointer size: {struct.calcsize(""P"") * 8}-bit')"
 
     - name: Install dependencies with retry
       run: |
         # 设置 pip 重试和超时
         python -m pip install --upgrade pip
-        pip config set global.timeout 120
-        pip config set global.retries 3
+        pip config set global.timeout 300  # 增加超时时间
+        pip config set global.retries 5    # 增加重试次数
         
-        # 安装所有依赖，包括 flask_cors
+        echo "安装基本依赖..."
         pip install pyinstaller==6.15.0 flask==3.1.2 mutagen==1.47.0 requests==2.32.5 flask_cors==4.0.0
         
-        # 安装 PySide6 (架构会自动匹配)
         echo "正在安装 PySide6 for ${{ matrix.architecture }}..."
-        pip install "pyside6==6.6.1" --timeout=180
+        # 使用清华镜像源加速下载
+        pip install "pyside6==6.6.1" -i https://pypi.tuna.tsinghua.edu.cn/simple --timeout=300
         
         # 验证安装
-        python -c "import flask_cors; print(f'flask_cors version: {flask_cors.__version__}')"
-        python -c "import PySide6; print(f'PySide6 version: {PySide6.__version__}')"
-        python -c "import sys; print(f'Executable: {sys.executable}')"
+        python -c "import flask_cors; print('flask_cors 安装成功')"
+        python -c "import PySide6; print(f'PySide6 版本: {PySide6.__version__}')"
 
     - name: Create icon file if missing
       run: |
-        # 如果图标不存在，创建一个简单的占位图标
         if (-not (Test-Path "icon.ico")) {
-          echo "图标文件不存在，创建占位图标..."
-          # 这里可以添加创建简单图标的逻辑，或者跳过图标参数
-          # 暂时先创建一个空文件
-          echo "placeholder" > icon.ico
+          echo "图标文件不存在，跳过图标参数"
+          # 不创建占位文件，直接在构建时跳过图标
         }
 
     - name: Build executable
       run: |
-        # 设置构建参数
-        $buildName = "MusicMetadataProcessor"
+        # 检查图标文件是否存在
+        $iconOption = ""
+        if (Test-Path "icon.ico") {
+          $iconOption = "--icon=icon.ico --add-data `"icon.ico;.`""
+          echo "使用图标文件"
+        } else {
+          echo "未找到图标文件，跳过图标"
+        }
         
         # 构建命令
-        python -m PyInstaller `
-          --onefile `
-          --windowed `
-          --name $buildName `
-          --icon=icon.ico `
-          --add-data "icon.ico;." `
-          --hidden-import=flask `
-          --hidden-import=flask_cors `
-          --hidden-import=flask_cors.core `
-          --hidden-import=mutagen `
-          --hidden-import=requests `
-          --hidden-import=PySide6 `
-          --hidden-import=PySide6.QtWidgets `
-          --hidden-import=PySide6.QtCore `
-          --hidden-import=PySide6.QtGui `
-          --hidden-import=PySide6.QtNetwork `
-          --hidden-import=werkzeug.serving `
-          --hidden-import=werkzeug.middleware.dispatcher `
-          --hidden-import=chardet `
-          --hidden-import=charset_normalizer `
-          --hidden-import=idna `
-          --hidden-import=urllib3 `
-          --hidden-import=certifi `
-          --hidden-import=ssl `
-          --hidden-import=json `
-          --hidden-import=os `
-          --hidden-import=sys `
-          --hidden-import=threading `
-          --hidden-import=time `
-          --hidden-import=re `
-          --hidden-import=base64 `
-          --hidden-import=hashlib `
-          --clean `
-          --noconfirm `
-          app_gui.py
+        $buildCmd = @"
+python -m PyInstaller `
+  --onefile `
+  --windowed `
+  --name MusicMetadataProcessor `
+  $iconOption `
+  --hidden-import=flask `
+  --hidden-import=flask_cors `
+  --hidden-import=flask_cors.core `
+  --hidden-import=mutagen `
+  --hidden-import=requests `
+  --hidden-import=PySide6 `
+  --hidden-import=PySide6.QtWidgets `
+  --hidden-import=PySide6.QtCore `
+  --hidden-import=PySide6.QtGui `
+  --hidden-import=PySide6.QtNetwork `
+  --hidden-import=werkzeug.serving `
+  --hidden-import=chardet `
+  --hidden-import=charset_normalizer `
+  --hidden-import=idna `
+  --hidden-import=urllib3 `
+  --hidden-import=certifi `
+  --clean `
+  --noconfirm `
+  app_gui.py
+"@
+        
+        echo "执行构建命令..."
+        Invoke-Expression $buildCmd
         
         # 检查构建是否成功并重命名
-        if (Test-Path "dist/$buildName.exe") {
+        if (Test-Path "dist/MusicMetadataProcessor.exe") {
           echo "✅ 构建成功！"
-          # 重命名以包含架构信息
-          $newName = "Metadata Processing Server_${{ matrix.artifact_suffix }}.exe"
-          Move-Item "dist/$buildName.exe" "dist/$newName"
+          $newName = "MusicMetadataProcessor_${{ matrix.artifact_suffix }}.exe"
+          Move-Item "dist/MusicMetadataProcessor.exe" "dist/$newName"
           echo "重命名为: $newName"
+          
+          # 显示文件信息
+          $file = Get-Item "dist/$newName"
+          $sizeMB = [math]::Round($file.Length / 1MB, 2)
+          echo "文件大小: ${sizeMB} MB"
         } else {
           echo "❌ 构建失败，输出文件不存在"
-          Get-ChildItem -Recurse
+          echo "当前目录文件列表:"
+          Get-ChildItem
+          echo "dist 目录文件列表:"
+          if (Test-Path "dist") { Get-ChildItem "dist" }
           exit 1
         }
 
@@ -143,10 +150,7 @@ jobs:
     - name: List downloaded artifacts
       run: |
         echo "下载的构建文件:"
-        find ./artifacts -name "*.exe" -type f | while read file; do
-          echo " - $file"
-          ls -la "$file"
-        done
+        find ./artifacts -name "*.exe" -type f -exec ls -la {} \;
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
@@ -154,19 +158,9 @@ jobs:
         files: |
           artifacts/**/*.exe
         body: |
-          # 音乐元数据处理器
-          ## 版本信息
-          - 构建时间: ${{ github.event.repository.updated_at }}
-          - Python版本: 3.10
-          - 包含架构: x64 (64位) 和 x86 (32位)
-          ## 下载说明
-          - **MusicMetadataProcessor_windows-x64.exe**: 64位Windows系统使用
-          - **MusicMetadataProcessor_windows-x86.exe**: 32位Windows系统使用
-          ## 系统要求
-          - Windows 7 或更高版本
-          - 对应架构的系统（x64或x86）
-          ## 注意事项
-          - 首次运行可能会被Windows Defender拦截，请选择"更多信息"->"仍要运行"
-          - 确保系统中已安装必要的Visual C++运行时库
+          自动构建的音乐元数据处理器
+          - 构建时间: ${{ date }}
+          - Python 版本: 3.10
+          - 包含 64位 和 32位 版本
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
