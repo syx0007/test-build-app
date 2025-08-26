@@ -37,25 +37,47 @@ jobs:
         python -c "import platform; print('Architecture: ' + platform.machine())"
         python -c "import struct; print('Pointer size: ' + str(struct.calcsize('P') * 8) + ' bits')"
 
-    - name: Install dependencies
+    - name: Install core dependencies
       run: |
         # 设置 pip 重试和超时
         python -m pip install --upgrade pip
-        pip config set global.timeout 120
-        pip config set global.retries 3
+        pip config set global.timeout 300
+        pip config set global.retries 5
         
-        # 安装核心依赖
+        # 安装核心依赖（除PySide6外）
         echo "正在安装核心依赖..."
         pip install flask==3.1.2 mutagen==1.47.0 requests==2.32.5 flask_cors==4.0.0
-        
-        # 安装 PySide6 - 使用特定版本确保兼容性
-        echo "正在安装 PySide6..."
-        pip install "pyside6==6.6.1" --timeout=180
-        
-        # 安装 PyInstaller
         pip install pyinstaller==6.15.0
+
+    - name: Install PySide6 with retry
+      run: |
+        # 使用重试机制安装PySide6
+        $maxRetries = 3
+        $retryCount = 0
+        $success = $false
         
-        # 验证安装
+        while (-not $success -and $retryCount -lt $maxRetries) {
+          $retryCount++
+          Write-Output "尝试安装 PySide6 (第 $retryCount 次)..."
+          
+          try {
+            # 使用清华镜像源加速下载
+            pip install "pyside6==6.6.1" -i https://pypi.tuna.tsinghua.edu.cn/simple --timeout=300
+            $success = $true
+            Write-Output "✅ PySide6 安装成功"
+          } catch {
+            Write-Output "❌ PySide6 安装失败，等待10秒后重试..."
+            Start-Sleep -Seconds 10
+          }
+        }
+        
+        if (-not $success) {
+          Write-Output "❌ PySide6 安装失败，已达到最大重试次数"
+          exit 1
+        }
+
+    - name: Verify installations
+      run: |
         python -c "import flask_cors; print('flask_cors version:', flask_cors.__version__)"
         python -c "import PySide6; print('PySide6 version:', PySide6.__version__)"
         python -c "import sys; print('Python executable:', sys.executable)"
