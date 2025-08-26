@@ -10,7 +10,7 @@ jobs:
   build-windows:
     strategy:
       matrix:
-        python-version: ['3.10']
+        python-version: ['3.9', '3.11']  # Windows 2022 支持的版本
         architecture: [x64, x86]
         include:
           - architecture: x64
@@ -30,20 +30,32 @@ jobs:
         python-version: ${{ matrix.python-version }}
         architecture: ${{ matrix.python-arch }}
 
-    - name: Display Python version
-      run: python --version
+    - name: Display Python version and info
+      run: |
+        python --version
+        python -c "import sys; print(f'Architecture: {64 if sys.maxsize > 2**32 else 32}-bit')"
+        python -c "import struct; print(f'Struct format: {struct.calcsize(\"P\") * 8}-bit')"
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install PyInstaller flask flask-cors mutagen requests PySide6
 
-    - name: Create icon directory
+    - name: Check if icon exists and copy
       run: |
-        New-Item -ItemType Directory -Path "D:/moe-n/Desktop/app" -Force
-        # 复制图标文件（如果有）
+        # 检查图标文件是否存在
         if (Test-Path "icon.ico") {
-          Copy-Item "icon.ico" "D:/moe-n/Desktop/app/icon.ico" -Force
+          Write-Host "✅ 找到图标文件 icon.ico"
+          # 创建目录结构（如果需要）
+          $iconDir = "D:/moe-n/Desktop/app"
+          if (-not (Test-Path $iconDir)) {
+            New-Item -ItemType Directory -Path $iconDir -Force
+            Write-Host "✅ 创建图标目录: $iconDir"
+          }
+          Copy-Item "icon.ico" "$iconDir/icon.ico" -Force
+          Write-Host "✅ 复制图标文件到 $iconDir/icon.ico"
+        } else {
+          Write-Host "⚠️  未找到 icon.ico 文件，构建将继续但可能没有图标"
         }
 
     - name: Run build script
@@ -51,24 +63,30 @@ jobs:
       env:
         PYTHONUTF8: 1
 
-    - name: Rename artifact with architecture
+    - name: Rename artifact with architecture and python version
       run: |
         $oldPath = "dist/MusicMetadataProcessor.exe"
-        $newPath = "dist/MusicMetadataProcessor_${{ matrix.architecture }}.exe"
+        $pythonVersion = python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+        $newPath = "dist/MusicMetadataProcessor_py$pythonVersion_${{ matrix.architecture }}.exe"
         if (Test-Path $oldPath) {
           Rename-Item $oldPath $newPath
+          Write-Host "✅ 重命名文件: $oldPath -> $newPath"
+        } else {
+          Write-Host "❌ 未找到构建产物: $oldPath"
+          Get-ChildItem -Recurse | Where-Object { $_.Name -like "*.exe" } | ForEach-Object { Write-Host "找到的EXE文件: $($_.FullName)" }
+          exit 1
         }
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: MusicMetadataProcessor_${{ matrix.architecture }}
-        path: dist/MusicMetadataProcessor_${{ matrix.architecture }}.exe
+        name: MusicMetadataProcessor_py${{ matrix.python-version }}_${{ matrix.architecture }}
+        path: dist/MusicMetadataProcessor_py${{ matrix.python-version }}_${{ matrix.architecture }}.exe
 
     - name: Create release on tag
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       with:
-        files: dist/MusicMetadataProcessor_${{ matrix.architecture }}.exe
+        files: dist/MusicMetadataProcessor_py${{ matrix.python-version }}_${{ matrix.architecture }}.exe
         draft: false
         prerelease: false
