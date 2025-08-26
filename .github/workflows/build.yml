@@ -48,7 +48,7 @@ jobs:
         echo "正在安装核心依赖..."
         pip install flask==3.1.2 mutagen==1.47.0 requests==2.32.5 flask_cors==4.0.0
         
-        # 根据架构安装 PySide6
+        # 安装 PySide6 - 使用特定版本确保兼容性
         echo "正在安装 PySide6..."
         pip install "pyside6==6.6.1" --timeout=180
         
@@ -59,14 +59,7 @@ jobs:
         python -c "import flask_cors; print('flask_cors version:', flask_cors.__version__)"
         python -c "import PySide6; print('PySide6 version:', PySide6.__version__)"
         python -c "import sys; print('Python executable:', sys.executable)"
-
-    - name: Create icon file if missing
-      run: |
-        # 如果图标不存在，创建一个简单的占位图标
-        if (-not (Test-Path "icon.ico")) {
-          echo "图标文件不存在，创建占位图标..."
-          New-Item -ItemType File -Name "icon.ico" -Force
-        }
+        python -c "import PySide6; import os; print('PySide6 path:', os.path.dirname(PySide6.__file__))"
 
     - name: Build executable for ${{ matrix.target }}
       run: |
@@ -76,54 +69,45 @@ jobs:
         
         Write-Output "开始构建 ${{ matrix.target }} 架构的可执行文件..."
         
-        # 构建命令 - 特别为x86架构添加额外处理
-        $pyinstallerArgs = @(
-          "--onefile",
-          "--windowed",
-          "--name=$buildName",
-          "--icon=icon.ico",
-          "--add-data=icon.ico;.",
-          "--hidden-import=flask",
-          "--hidden-import=flask_cors",
-          "--hidden-import=flask_cors.core",
-          "--hidden-import=mutagen",
-          "--hidden-import=requests",
-          "--hidden-import=PySide6",
-          "--hidden-import=PySide6.QtWidgets",
-          "--hidden-import=PySide6.QtCore",
-          "--hidden-import=PySide6.QtGui",
-          "--hidden-import=PySide6.QtNetwork",
-          "--hidden-import=werkzeug.serving",
-          "--hidden-import=werkzeug.middleware.dispatcher",
-          "--hidden-import=chardet",
-          "--hidden-import=charset_normalizer",
-          "--hidden-import=idna",
-          "--hidden-import=urllib3",
-          "--hidden-import=certifi",
-          "--hidden-import=ssl",
-          "--hidden-import=json",
-          "--hidden-import=os",
-          "--hidden-import=sys",
-          "--hidden-import=threading",
-          "--hidden-import=time",
-          "--hidden-import=re",
-          "--hidden-import=base64",
-          "--hidden-import=hashlib",
-          "--clean",
-          "--noconfirm",
-          "app_gui.py"
-        )
+        # 获取PySide6安装路径
+        $pysidePath = python -c "import PySide6, os; print(os.path.dirname(PySide6.__file__))"
+        Write-Output "PySide6路径: $pysidePath"
         
-        # 对于x86架构，添加额外的路径处理
-        if ("${{ matrix.target }}" -eq "x86") {
-          # 确保PySide6的路径被正确包含
-          $pysidePath = python -c "import PySide6, os; print(os.path.dirname(PySide6.__file__))"
-          Write-Output "PySide6路径: $pysidePath"
-          $pyinstallerArgs += "--paths=$pysidePath"
-        }
-        
-        # 执行构建
-        python -m PyInstaller @pyinstallerArgs
+        # 构建命令 - 显式添加PySide6路径
+        python -m PyInstaller `
+          --onefile `
+          --windowed `
+          --name $buildName `
+          --paths="$pysidePath" `
+          --hidden-import=flask `
+          --hidden-import=flask_cors `
+          --hidden-import=flask_cors.core `
+          --hidden-import=mutagen `
+          --hidden-import=requests `
+          --hidden-import=PySide6 `
+          --hidden-import=PySide6.QtWidgets `
+          --hidden-import=PySide6.QtCore `
+          --hidden-import=PySide6.QtGui `
+          --hidden-import=PySide6.QtNetwork `
+          --hidden-import=werkzeug.serving `
+          --hidden-import=werkzeug.middleware.dispatcher `
+          --hidden-import=chardet `
+          --hidden-import=charset_normalizer `
+          --hidden-import=idna `
+          --hidden-import=urllib3 `
+          --hidden-import=certifi `
+          --hidden-import=ssl `
+          --hidden-import=json `
+          --hidden-import=os `
+          --hidden-import=sys `
+          --hidden-import=threading `
+          --hidden-import=time `
+          --hidden-import=re `
+          --hidden-import=base64 `
+          --hidden-import=hashlib `
+          --clean `
+          --noconfirm `
+          app_gui.py
         
         # 检查构建是否成功
         if (Test-Path "dist/$buildName.exe") {
