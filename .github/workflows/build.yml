@@ -35,7 +35,7 @@ jobs:
       run: |
         python --version
         python -c "import platform; print(f'Architecture: {platform.machine()}')"
-        python -c "import struct; print(f'Pointer size: {struct.calcsize('P') * 8} bits')"
+        python -c "import struct; print(f'Pointer size: {struct.calcsize(\"P\") * 8} bits')"  # 修复这里
 
     - name: Install dependencies
       run: |
@@ -62,10 +62,6 @@ jobs:
         # 如果图标不存在，创建一个简单的占位图标
         if (-not (Test-Path "icon.ico")) {
           echo "图标文件不存在，创建占位图标..."
-          # 使用 PowerShell 创建一个简单的 ico 文件（如果需要）
-          # 或者使用在线工具生成后上传到仓库
-          echo "建议：请将 icon.ico 文件添加到代码仓库中"
-          # 创建一个空文件作为占位符
           New-Item -ItemType File -Name "icon.ico" -Force
         }
 
@@ -76,7 +72,6 @@ jobs:
         $outputName = "MusicMetadataProcessor_windows_${{ matrix.target }}.exe"
         
         Write-Output "开始构建 ${{ matrix.target }} 架构的可执行文件..."
-        Write-Output "输出文件名: $outputName"
         
         # 构建命令
         python -m PyInstaller `
@@ -118,13 +113,10 @@ jobs:
         # 检查构建是否成功
         if (Test-Path "dist/$buildName.exe") {
           echo "✅ ${{ matrix.target }} 架构构建成功！"
-          # 重命名以包含架构信息
           Move-Item "dist/$buildName.exe" "dist/$outputName"
-          # 显示文件信息
           Get-Item "dist/$outputName" | Format-List Name, Length, LastWriteTime
         } else {
-          echo "❌ ${{ matrix.target }} 架构构建失败，输出文件不存在"
-          Get-ChildItem -Recurse -Filter "*.exe" | ForEach-Object { Write-Output "找到的文件: $($_.FullName)" }
+          echo "❌ ${{ matrix.target }} 架构构建失败"
           exit 1
         }
 
@@ -148,14 +140,6 @@ jobs:
         pattern: windows-*
         merge-multiple: true
 
-    - name: List downloaded files
-      run: |
-        echo "下载的文件列表："
-        find artifacts -type f -name "*.exe" | while read file; do
-          echo " - $file"
-          ls -la "$file"
-        done
-
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
@@ -170,19 +154,11 @@ jobs:
           - 包含架构: x86 (32位) 和 x64 (64位)
           
           ## 文件说明
-          - `MusicMetadataProcessor_windows_x86.exe`: 32位版本，兼容性更好
-          - `MusicMetadataProcessor_windows_x86_64.exe`: 64位版本，性能更优
+          - `MusicMetadataProcessor_windows_x86.exe`: 32位版本
+          - `MusicMetadataProcessor_windows_x86_64.exe`: 64位版本
           
           ## 使用说明
-          1. 根据您的系统架构选择合适的版本下载
+          1. 根据系统架构选择合适的版本
           2. 双击运行即可
-          
-          ## 系统要求
-          - Windows 7 或更高版本
-          - 需要 Visual C++ Redistributable (通常系统已自带)
-          
-          ## 注意事项
-          - 首次运行可能会被Windows Defender拦截，请选择"更多信息"->"仍要运行"
-          - 建议使用64位系统下载64位版本以获得更好性能
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
